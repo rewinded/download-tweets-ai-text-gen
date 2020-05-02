@@ -6,6 +6,7 @@ from tqdm import tqdm
 import logging
 from datetime import datetime
 from time import sleep
+from pathlib import Path
 import os
 
 # Surpress random twint warnings
@@ -44,37 +45,38 @@ def download_tweets(username=None, limit=None, include_replies=False,
     :param strip_hashtags: Whether to remove hashtags from the tweets.
     :param include_links: Whether to include tweets with links.
     """
-    
+
     # Validate that a username or .txt file name is specified
     assert username, "You must specify a username to download tweets from."
-    
+
     # Create an empty list of usernames for which to dowload tweets
     usernames = []
     filename = username
-	
+
     # Get the file's current directory
     dir_path = os.path.dirname(os.path.realpath(__file__))
-    
+
     # If username is a .txt file, append all usernames to usernames list
     if username[-4:] == ".txt":
         # Open username file and copy usernames to usernames list
-        
+
         pathfilename = os.path.join(dir_path, filename)
         with open(pathfilename, 'r') as f:
             [usernames.append(username.rstrip('\n')) for username in f]
-                
-    
-    #If username is not a .txt file, append username to usernames list
+
+    # If username is not a .txt file, append username to usernames list
     else:
         filename = username
         usernames.append(username)
-    
+
     for username in usernames:
-        download_account_tweets(dir_path, username, limit, include_replies, strip_usertags, strip_hashtags, include_links)
+        download_account_tweets(dir_path, username, limit, include_replies, strip_usertags, strip_hashtags,
+                                include_links)
+
 
 def download_account_tweets(dir_path=None, username=None, limit=None, include_replies=False,
-                    strip_usertags=False, strip_hashtags=False, 
-                    include_links=False):
+                            strip_usertags=False, strip_hashtags=False,
+                            include_links=False):
     """Download public Tweets from a given Twitter account and return as a list
     :param username: Twitter @ username to gather tweets.
     :param limit: # of tweets to gather; None for all tweets.
@@ -95,7 +97,7 @@ def download_account_tweets(dir_path=None, username=None, limit=None, include_re
         c_lookup.Username = username
         c_lookup.Store_object = True
         c_lookup.Hide_output = True
-        if include_links == True:
+        if include_links:
             c_lookup.Links = 'include'
         else:
             c_lookup.Links = 'exclude'
@@ -113,16 +115,18 @@ def download_account_tweets(dir_path=None, username=None, limit=None, include_re
 
     # Create an empty list of tweets to output
     tweets_output = []
-    
+
     # Create an empty file to store pagination id
     with open('.temp', 'w', encoding='utf-8') as f:
         f.write(str(-1))
+
+    Path("tweets").mkdir(parents=True, exist_ok=True)
 
     print("Retrieving tweets for @{}...".format(username))
 
     with open(dir_path + '/tweets/{}_tweets.csv'.format(username), 'w', encoding='utf8') as f:
         w = csv.writer(f)
-        w.writerow(['tweets']) # gpt-2-simple expects a CSV header by default
+        w.writerow(['tweets'])  # gpt-2-simple expects a CSV header by default
 
         pbar = tqdm(range(limit),
                     desc="Oldest Tweet")
@@ -158,8 +162,8 @@ def download_account_tweets(dir_path=None, username=None, limit=None, include_re
 
             if not include_replies:
                 tweets = [re.sub(pattern, '', tweet.tweet).strip()
-                        for tweet in tweet_data
-                        if not is_reply(tweet)]
+                          for tweet in tweet_data
+                          if not is_reply(tweet)]
 
                 # On older tweets, if the cleaned tweet starts with an "@",
                 # it is a de-facto reply.
@@ -169,7 +173,7 @@ def download_account_tweets(dir_path=None, username=None, limit=None, include_re
                         w.writerow([tweet])
             else:
                 tweets = [re.sub(pattern, '', tweet.tweet).strip()
-                        for tweet in tweet_data]
+                          for tweet in tweet_data]
 
                 for tweet in tweets:
                     if tweet != '':
@@ -184,13 +188,13 @@ def download_account_tweets(dir_path=None, username=None, limit=None, include_re
                 pbar.update(40)
             if tweet_data:
                 oldest_tweet = (datetime
-                            .utcfromtimestamp(tweet_data[-1].datetime / 1000.0)
-                            .strftime('%Y-%m-%d %H:%M:%S'))
+                                .utcfromtimestamp(tweet_data[-1].datetime / 1000.0)
+                                .strftime('%Y-%m-%d %H:%M:%S'))
                 pbar.set_description("Oldest Tweet: " + oldest_tweet)
-                
+
         pbar.close()
         os.remove('.temp')
-        
+
         f.close()
 
         # Return list of tweets

@@ -250,4 +250,8 @@ tags
 
 # End of https://www.gitignore.io/api/vim,macos,python,pycharm
 
+# Project specific ignores
+tweets/
+.temp
+
 
