@@ -69,19 +69,10 @@ def download_tweets(username=None, limit=None, include_replies=False,
         filename = username
         usernames.append(username)
     
-    # Download tweets for all usernames and write to file
-    with open(dir_path + '/{}_tweets.csv'.format(filename), 'w', encoding='utf8') as f:
-        w = csv.writer(f)
-        w.writerow(['tweets']) # gpt-2-simple expects a CSV header by default
-        
-        
-        for username in usernames:
-            tweets = download_account_tweets(username, limit, include_replies, strip_usertags, strip_hashtags, include_links)
-            
-            [w.writerow([tweet]) for tweet in tweets]
-    
+    for username in usernames:
+        download_account_tweets(dir_path, username, limit, include_replies, strip_usertags, strip_hashtags, include_links)
 
-def download_account_tweets(username=None, limit=None, include_replies=False,
+def download_account_tweets(dir_path=None, username=None, limit=None, include_replies=False,
                     strip_usertags=False, strip_hashtags=False, 
                     include_links=False):
     """Download public Tweets from a given Twitter account and return as a list
@@ -129,71 +120,81 @@ def download_account_tweets(username=None, limit=None, include_replies=False,
 
     print("Retrieving tweets for @{}...".format(username))
 
-    pbar = tqdm(range(limit),
-                desc="Oldest Tweet")
-    for i in range((limit // 20) - 1):
-        tweet_data = []
+    with open(dir_path + '/tweets/{}_tweets.csv'.format(username), 'w', encoding='utf8') as f:
+        w = csv.writer(f)
+        w.writerow(['tweets']) # gpt-2-simple expects a CSV header by default
 
-        # twint may fail; give it up to 5 tries to return tweets
-        for _ in range(0, 4):
-            if len(tweet_data) == 0:
-                c = twint.Config()
-                c.Store_object = True
-                c.Hide_output = True
-                c.Username = username
-                c.Limit = 40
-                c.Resume = '.temp'
+        pbar = tqdm(range(limit),
+                    desc="Oldest Tweet")
+        for i in range((limit // 20) - 1):
+            tweet_data = []
 
-                c.Store_object_tweets_list = tweet_data
-
-                twint.run.Search(c)
-
-                # If it fails, sleep before retry.
+            # twint may fail; give it up to 5 tries to return tweets
+            for _ in range(0, 4):
                 if len(tweet_data) == 0:
-                    sleep(15.0)
+                    c = twint.Config()
+                    c.Store_object = True
+                    c.Hide_output = True
+                    c.Username = username
+                    c.Limit = 40
+                    c.Resume = '.temp'
+
+                    c.Store_object_tweets_list = tweet_data
+
+                    twint.run.Search(c)
+
+                    # If it fails, sleep before retry.
+                    if len(tweet_data) == 0:
+                        sleep(200.0)
+                else:
+                    continue
+
+            # If still no tweets after multiple tries, we're done
+            if len(tweet_data) == 0:
+                break
+
+            if i > 0:
+                tweet_data = tweet_data[20:]
+
+            if not include_replies:
+                tweets = [re.sub(pattern, '', tweet.tweet).strip()
+                        for tweet in tweet_data
+                        if not is_reply(tweet)]
+
+                # On older tweets, if the cleaned tweet starts with an "@",
+                # it is a de-facto reply.
+                for tweet in tweets:
+                    if tweet != '' and not tweet.startswith('@'):
+                        tweets_output.append([tweet])
+                        w.writerow([tweet])
             else:
-                continue
+                tweets = [re.sub(pattern, '', tweet.tweet).strip()
+                        for tweet in tweet_data]
 
-        # If still no tweets after multiple tries, we're done
-        if len(tweet_data) == 0:
-            break
+                for tweet in tweets:
+                    if tweet != '':
+                        tweets_output.append([tweet])
+                        w.writerow([tweet])
 
-        if i > 0:
-            tweet_data = tweet_data[20:]
+            f.flush()
 
-        if not include_replies:
-            tweets = [re.sub(pattern, '', tweet.tweet).strip()
-                      for tweet in tweet_data
-                      if not is_reply(tweet)]
+            if i > 0:
+                pbar.update(20)
+            else:
+                pbar.update(40)
+            if tweet_data:
+                oldest_tweet = (datetime
+                            .utcfromtimestamp(tweet_data[-1].datetime / 1000.0)
+                            .strftime('%Y-%m-%d %H:%M:%S'))
+                pbar.set_description("Oldest Tweet: " + oldest_tweet)
+                
+        pbar.close()
+        os.remove('.temp')
+        
+        f.close()
 
-            # On older tweets, if the cleaned tweet starts with an "@",
-            # it is a de-facto reply.
-            for tweet in tweets:
-                if tweet != '' and not tweet.startswith('@'):
-                    tweets_output.append([tweet])
-        else:
-            tweets = [re.sub(pattern, '', tweet.tweet).strip()
-                      for tweet in tweet_data]
-
-            for tweet in tweets:
-                if tweet != '':
-                    tweets_output.append([tweet])
-
-        if i > 0:
-            pbar.update(20)
-        else:
-            pbar.update(40)
-        if tweet_data:
-            oldest_tweet = (datetime
-                           .utcfromtimestamp(tweet_data[-1].datetime / 1000.0)
-                           .strftime('%Y-%m-%d %H:%M:%S'))
-            pbar.set_description("Oldest Tweet: " + oldest_tweet)
-            
-    pbar.close()
-    os.remove('.temp')
-    
-    # Return list of tweets
-    return tweets_output
+        # Return list of tweets
+        return tweets_output
 
 
 if __name__ == "__main__":
